@@ -1,0 +1,351 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="theme-color" content="#ffffff">
+<link rel="manifest" href="./manifest.webmanifest">
+<link rel="apple-touch-icon" href="./icons/icon-192.png">
+<title>Zebra Barcode Display</title>
+
+<style>
+• { box-sizing: border-box; }
+
+body {
+margin: 0;
+padding: 12px 8px 24px;
+background: #f4f6f8;
+color: #17202a;
+font-family: Arial, sans-serif;
+}
+
+main {
+max-width: 760px;
+margin: 0 auto;
+}
+
+h1 {
+font-size: 24px;
+text-align: center;
+margin: 8px 0;
+}
+
+.sub {
+color: #5d6873;
+font-size: 14px;
+text-align: center;
+margin-bottom: 18px;
+}
+
+.panel {
+background: white;
+border-radius: 14px;
+padding: 16px 10px;
+box-shadow: 0 2px 12px rgba(0,0,0,.06);
+}
+
+label {
+display: block;
+font-weight: bold;
+margin-bottom: 8px;
+}
+
+input {
+width: 100%;
+font-size: 26px;
+padding: 13px;
+border: 2px solid #cbd3da;
+border-radius: 10px;
+}
+
+.buttons {
+display: flex;
+gap: 8px;
+margin-top: 12px;
+}
+
+button {
+flex: 1;
+border: 0;
+border-radius: 10px;
+padding: 14px 6px;
+font-size: 14px;
+font-weight: bold;
+background: #1769aa;
+color: white;
+}
+
+button.secondary {
+background: #e8edf2;
+color: #17202a;
+}
+
+.barcode-wrap {
+background: white;
+margin-top: 16px;
+padding: 8px 2px 12px;
+border-radius: 12px;
+text-align: center;
+overflow: hidden;
+}
+
+canvas {
+display: block;
+width: 100%;
+height: auto;
+}
+
+#shown {
+font-size: 30px;
+font-weight: bold;
+letter-spacing: 2px;
+margin-top: 6px;
+overflow-wrap: anywhere;
+}
+
+#status {
+min-height: 20px;
+color: #b42318;
+font-size: 13px;
+margin-top: 8px;
+}
+
+.tip {
+color: #59636e;
+font-size: 13px;
+line-height: 1.55;
+margin: 14px 2px 0;
+}
+
+.small {
+color: #6b7280;
+font-size: 12px;
+text-align: center;
+margin-top: 13px;
+}
+</style>
+</head>
+
+<body>
+<main>
+
+<h1>Zebra Barcode Display</h1>
+
+<p class="sub">
+Enter a number or text. The barcode updates automatically.
+</p>
+
+<section class="panel">
+
+<label for="code">Barcode Content</label>
+
+<input
+id="code"
+type="text"
+inputmode="text"
+autocomplete="off"
+spellcheck="false"
+value="24"
+placeholder="Example: 24 or ABC123"
+
+<div class="buttons">
+<button id="generate" type="button">
+Update Barcode
+</button>
+
+<button id="save" class="secondary" type="button">
+Save Barcode Image
+</button>
+</div>
+
+<div id="status" role="status"></div>
+
+<div class="barcode-wrap">
+<canvas
+id="barcode"
+width="400"
+height="330"
+aria-label="Barcode">
+</canvas>
+
+<div id="shown">24</div>
+</div>
+
+<p class="tip">
+For scanning, increase your phone screen brightness and point
+the Zebra scanner at the centre of the barcode.
+If scanning does not work, check that your scanner supports
+reading barcodes from mobile phone screens.
+</p>
+
+</section>
+
+<p class="small">
+Code 128 · Barcode generated on your phone.
+No data is uploaded.
+</p>
+
+</main>
+
+<script>
+(() => {
+
+const P = [
+"212222","222122","222221","121223","121322","131222","122213","122312","132212","221213",
+"221312","231212","112232","122132","122231","113222","123122","123221","223211","221132",
+"221231","213212","223112","312131","311222","321122","321221","312212","322112","322211",
+"212123","212321","232121","111323","131123","131321","112313","132113","132311","211313",
+"231113","231311","112133","112331","132131","113123","113321","133121","313121","211331",
+"231131","213113","213311","213131","311123","311321","331121","312113","312311","332111",
+"314111","221411","431111","111224","111422","121124","121421","141122","141221","112214",
+"112412","122114","122411","142112","142211","241211","221114","413111","241112","134111",
+"111242","121142","121241","114212","124112","124211","411212","421112","421211","212141",
+"214121","412121","111143","111341","131141","114113","114311","411113","411311","113141",
+"114131","311141","411131","211412","211214","211232","2331112"
+];
+
+const input = document.getElementById('code');
+const canvas = document.getElementById('barcode');
+const ctx = canvas.getContext('2d');
+const shown = document.getElementById('shown');
+const status = document.getElementById('status');
+
+function code128B(value) {
+
+const chars = Array.from(value);
+
+const values = chars.map(ch => {
+const n = ch.charCodeAt(0);
+
+if (n < 32 || n > 126) {
+throw new Error(
+'Please use English letters, numbers and standard keyboard symbols.'
+);
+}
+
+return n - 32;
+});
+
+const words = [104, ...values];
+
+let checksum = 104;
+
+for (let i = 0; i < values.length; i++) {
+checksum += values[i] * (i + 1);
+}
+
+words.push(checksum % 103, 106);
+
+return words;
+}
+
+function draw() {
+
+const value = input.value.trim();
+
+status.textContent = '';
+
+if (!value) {
+ctx.clearRect(0, 0, canvas.width, canvas.height);
+shown.textContent = '';
+status.textContent = 'Please enter barcode content.';
+return false;
+}
+
+try {
+
+const words = code128B(value);
+
+const quiet = 50;
+const moduleWidth = 3;
+const top = 15;
+const barHeight = 285;
+
+const totalModules = words.reduce((sum, word) => {
+return sum + P[word].split('').reduce(
+(a, b) => a + Number(b), 0
+);
+}, 0);
+
+canvas.width = quiet * 2 + totalModules * moduleWidth;
+canvas.height = 320;
+
+ctx.fillStyle = '#ffffff';
+ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+let x = quiet;
+
+ctx.fillStyle = '#000000';
+
+for (const word of words) {
+
+const pattern = P[word];
+
+for (let i = 0; i < pattern.length; i++) {
+
+const width = Number(pattern[i]) * moduleWidth;
+
+if (i % 2 === 0) {
+ctx.fillRect(x, top, width, barHeight);
+}
+
+x += width;
+}
+}
+
+shown.textContent = value;
+
+return true;
+
+} catch (error) {
+
+ctx.clearRect(0, 0, canvas.width, canvas.height);
+shown.textContent = '';
+status.textContent = error.message;
+
+return false;
+}
+}
+
+document.getElementById('generate')
+.addEventListener('click', draw);
+
+input.addEventListener('input', draw);
+
+document.getElementById('save')
+.addEventListener('click', () => {
+
+if (!draw()) return;
+
+const link = document.createElement('a');
+
+link.download =
+'Zebra-barcode-' +
+input.value.trim().replace(/[^a-zA-Z0-9_-]/g, '_') +
+'.png';
+
+link.href = canvas.toDataURL('image/png');
+
+link.click();
+});
+
+draw();
+
+})();
+</script>
+
+<script>
+if ('serviceWorker' in navigator &&
+location.protocol.startsWith('http')) {
+
+window.addEventListener('load', () => {
+navigator.serviceWorker
+.register('./sw.js')
+.catch(() => {});
+});
+
+}
+</script>
+
+</body>
+</html>
